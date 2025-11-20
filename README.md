@@ -1,4 +1,4 @@
-# Regression and Clustering on the EFIGE dataset
+# Regression and Clustering on the EFIGE dataset 📈
 
 Comprehensive statistical analysis of EFIGE dataset using methods such as MLR, Logistic Regression, Classification (KNN), Fuzzy and Hierarchical clustering.
 
