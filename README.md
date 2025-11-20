@@ -1,6 +1,6 @@
 # Regression and Clustering on the EFIGE dataset
 
-Comprehensive analysis of EFIGE dataset using statistical methods such as MLR, Logistic Regression, Classification (KNN), Fuzzy and Hierarchical clustering.
+Comprehensive statistical analysis of EFIGE dataset using methods such as MLR, Logistic Regression, Classification (KNN), Fuzzy and Hierarchical clustering.
 
 ## Data
 European Firms in a Global Economy (EFIGE), is a dataset containing information about a sample of 14758 firms for a total of 489 qualitative and quantitative variables (obtained by the survey questions) in seven EU economies: Germany, France, Italy, Spain, United Kingdom, Austria, Hungary.
