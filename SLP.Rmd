@@ -1,0 +1,849 @@
+---
+title: "Statistical Learning Project"
+author: "Sara Lattarulo"
+date: "5/22/2021"
+output: rmdformats::readthedown
+---
+
+# Introduction
+
+![](/Users/saralattarulo/Desktop/Project/Figures/biz-analytics-for-professional-services.jpeg)
+
+
+
+
+### **Importing Dataset and uploading libraries**
+```{r message=FALSE, warning=FALSE}
+library(imputeMissings)
+library(rmdformats)
+library(GGally)
+library(circlize)
+library(psych)
+library(pscl)
+library(dendextend)
+library(sjPlot)
+library(gridExtra)
+library(fclust)
+library(FactoMineR)
+library(class)
+library(cluster)
+library(factoextra)
+library(tidyverse)
+library(ggpubr)
+library(caret)
+library(car)
+library(lawstat)
+library(lmtest)
+library(MASS)
+library(readxl)
+
+Efige <- read_excel("/Users/saralattarulo/Desktop/Project/data_orig.xlsx", 
+    sheet = "all",na = "9999999999")
+```
+
+```{r include=FALSE}
+attach(Efige)
+```
+
+
+### **VARIABLES**
+
+European Firms in a Global Economy (EFIGE), is a dataset containing information about a sample of 14758 firms for a total of 489 qualitative and quantitative variables (obtained by the survey questions) in seven EU economies:
+
+-Germany
+
+-France
+
+-Italy
+
+-Spain
+
+-United Kingdom
+
+-Austria
+
+-Hungary
+
+Data was collected in 2010, covering the years from 2007 to 2009. 
+
+Being this dataset very huge, we will need to face many issues such as dealing with NA's, outliers and establishing which will be the most significant variables for our aims.
+
+I selected **28 variables** focusing on the first issue that we could bump: the time-series. Since this data was collected by taking in account a range of years, to avoid Time-series problems, **all my variables are selected on year 2008**. As a consequence the section C about investments on R&D activities has been excluded.
+
+### **Section A - STRUCTURE OF THE FIRM**: 
+  
+COUNTRY: country of the firm (categorical) **country**
+
+PAVITT: Classification of the firm (categorical) **pavitt**
+
+A1: year of establishment of the firm (categorical) **age**
+
+A2A: urnover made by core product (%) **core_p** 
+
+A3: Annual turnover (categorical)**turnov** 
+
+A16: Foreign affiliates(abs) **foreign_affiliates** 
+
+A20: CEO is a family member family (categorical)  **fam_ceo** 
+
+A16_2: First shareholder: share of capital(%) **first_share**
+
+
+### **SECTION B - WORKFORCE**
+
+B3: Total number of employees (abs)  **empl**
+
+b4_2_1: Enterpreneurs/executives not related to the family who owns the company (abs) **no_family_n** 
+
+b4_2_2: Enterpreneurs/executives related to the family who owns the company (abs) **Family_n**
+
+b4_2_2: White collars (abs) **white_n**
+
+b4_2_4: Skilled blue collars (abs) **skilled_n**
+
+b4_2_5: Unkilled blue collars (abs) **skilled_n** 
+
+B5_2: Total number of employees have been involved in R&D activities? (abs) **involv_n** 
+
+B6_2: Total number of of university graduates in your workforce in your home country (abs) **grad_n** 
+
+B7_2: Total number of foreign employees in your workforce in your home country (abs) 
+**foreign_empl_n** 
+
+B22: employers that did training programs (%) **training** 
+
+B23: Training type (categorical) **training_type**
+
+### **Section D – INTERNATIONALIZATION**
+
+D6: Total exporter countries(abs) **exp_richness** 
+  
+### **Section F - FINANCE**
+
+F0: External financing (categorical) **external_financing**
+
+F9: Number of banks **f9**
+
+F10: Your firm's total bank debit is held at your main bank (%) **f10**
+
+F11: How many years has this bank been the firm's main bank **f11**  
+
+### **Section E - MARKET & PRICING**
+
+E1: Firm's turnover was made up by sales of produced-to order goods (%) **po** 
+
+### **Extra variables**
+
+**Global Exporter**: firm exporting to China or India or other asian countries in the USA or Canada or Central or south America (categorical)
+
+**mkt_innov**: Firms that carried out new to market innovation (categorical)
+
+**family_tmt**: family people forming the business (%)
+
+After uploading the dataset, since we have variables of different kinds (even among numericals), I will upload some useful functions such as the **Standardization**, **Normalization** and one to **remove outliers**
+
+```{r}
+# Removing outliers
+remove_outliers <- function(x, na.rm = TRUE, ...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
+  H <- 1.5 * IQR(x, na.rm = na.rm)
+  y <- x
+  y[x < (qnt[1] - H)] <- NA
+  y[x > (qnt[2] + H)] <- NA
+  y
+}
+
+# Population standard deviation function
+PopSD= function (x){
+  sum((x-mean(x))^2)/length(x)
+}
+# Variable standardizer function
+Standardize = function(x){(x-mean(x))/PopSD(x)}
+
+# Normalization
+normalize <- function(x){
+return ((x-min(x))/(max(x)-min(x)))
+}
+```
+
+
+Variables that we are taking into account are selected step by step according to the study that we are implementing. 
+
+**LET'S START**
+
+![](/Users/saralattarulo/Desktop/Project/Figures/start.png)
+
+# Multiple linear Regression
+
+Thanks to the Multiple linear regression, we are able to predict a numerical outcome not using just one predictor, but more and more!
+
+In our case, we are trying to understand if the number of **Foreign employers** in an Italian and French firm, depends or not on the following variables:
+
+- Total exporter countries;
+
+- Employers involved in research and development;
+
+- Percentage of turnover of the firm related to produced-to-other goods;
+
+- If the firm carried out any market innovation;
+
+To represent the causal path underneath the model i am using DAG (Directed Acyclic Graphs).
+
+
+#![](/Users/saralattarulo/Desktop/Project/Figures/Screenshot 2021-05-31 at 16.36.40.png)
+
+Extract the subset and for this time I will neglect NA since we are loosing few observations in this case.
+
+```{r}
+Regression<- Efige %>%
+    dplyr::select(foreign_empl_n,exp_richness, no_family_n,involv_n,mkt_innov,po) %>%
+   dplyr:: mutate(country=as.factor(country),
+         mkt_innov=as.factor(mkt_innov),)%>%
+    filter(country=="ITA"|country=="FRA")
+
+Regression<-na.omit(Regression)
+head(Regression)
+psych::describe(Regression)
+```
+
+Pre-processing the data: standardizing predictors because we want to give the same weight to all variables in the model
+
+```{r}
+Regression$foreign_empl_n<-Standardize(Regression$foreign_empl_n)
+Regression$exp_richness<-Standardize(Regression$exp_richness)
+Regression$po<-Standardize(Regression$po)
+Regression$involv_n<-Standardize(Regression$involv_n)
+
+head(Regression)
+```
+
+At first glance we notice that e don't have linear relationships among variables; so for sure we will make some transformations on the variables.
+```{r}
+Reg=Regression[,-5]
+pairs(Reg[,-6])
+```
+
+
+### **Multiple linear Regression Model**
+
+After many trials I came up to the solution of transforming my model into a **Log-lin** model (with the exception of **involv_n** that i also transformed in log) 
+
+```{r message=FALSE, warning=FALSE}
+MLR=lm(log(foreign_empl_n)~ exp_richness + po + log(involv_n) + mkt_innov, data = Regression) 
+summary(MLR)
+par(mfrow=c(2,2))
+plot(MLR)
+```
+**Parameters interpretations**
+
+Other predictors constant, we can say:
+
+2.26741  is the expected mean change of log of foreign employers in terms of the number of standard deviations that we expect to observe when **total exporter countries** changes by 1 Standard deviation
+
+In this case it has a positive effect and is significant since the p-value is less than 0.05;
+
+0.41367 is the mean change of log of foreign employers in terms of the number of standard deviations that we expect to observe when **the percentage of turnover made up by produced-to-other goods** changes by 1 Standard Deviation. 
+
+In this case it has a positive effect, but it's not significant at all since the pvalue is way greater than 0.05;
+0.22960  is the mean change of log of foreign employers in terms of number of standard deviations that we expect to observe when log of **people involved in Research and development activities** changes by 1 Standard Deviation,
+
+In this case it has a positive effect and it's very significant since the p-value is 0.00148;
+
+-0.39157 is the average change in the log of foreign employers when firms carried out new market innovations. It has a negative effect and actually it's not really significant if we take in account a 0.05 level of significance.
+
+The adjusted R-squared may be low for many reasons, but in this case it's normal seeing it very low because we are working on a huge dataset, with more than 100 omitted variables that may be significant.. so that's fair.
+
+Let's proceed with our assumptions check.
+
+**Assumptions**
+
+- Linearity assumption
+```{r}
+crPlots(MLR)
+```
+
+Every parameter seems to have an approximately linear relationship with the outcome 
+
+- Mean of our error term is zero and normally distributed
+
+```{r}
+mean(MLR$residuals) 
+qqnorm(MLR$residuals)
+
+shapiro.test(MLR$residuals) 
+```
+
+The mean of our residuals is equal to 0 and our residuals are normally distribuited
+
+- Homoscedasticity of residuals: the variance must be constant
+
+```{r}
+lmtest::bptest(MLR) 
+```
+
+Since the p-value is greater than 0.05, we can asset the null hypothesis for which the variance of residuals is constant
+
+
+- Independence of errors
+
+```{r}
+lmtest::dwtest(MLR)
+```
+
+The p-value here appears to be higher than 0.05, so we can asset the null hypothesis for which there is independence of errors.
+
+- The x variables and residuals are uncorrelated 
+
+Take in account **Endogeneity problem** in this case.
+
+```{r}
+#H0: corr coefficient equal to 0
+#length(Regression$exp_richness)
+#length(MLR$residuals)
+
+#cor(Regression$exp_richness, MLR$residuals)
+#cor(Regression$no_family_n, MLR$residuals)
+#cor(Regression$involv_n, MLR$residuals)
+```
+
+- Absence of perfect multicollinearity
+
+```{r}
+pairs(Regression)
+car::vif(MLR) #VIF
+```
+
+To have a first idea about the multicollinearity among variables we can plot them one against the other. From a preliminary point of view we can see that we have absence of multicollinearity. 
+
+To be sure we might check the VIF (Variance Inflaction Factor), that usually indicates a model without multicollinearity when it's less than 2.
+
+As we see, there is no multicollinearity, therefore the assumption is met.
+
+
+# Logistic Regression
+
+Thanks to Logistic regression, we are able to predict a categorical target with more than one regressor.
+
+In our case, we are trying to understand if the probility of being in the group of **firm exporting to China or India or other asian countries in the USA or Canada or Central or south America** depends on:
+
+- Country of the firm;
+
+- If the CEO is a family member or not;
+
+- If the firm carried out market innovations
+
+- People involved in R&D;
+
+- Number of graduated employers in the firm.
+
+#![](/Users/saralattarulo/Desktop/Project/Figures/Statistical learning-63.jpg)
+
+In this case after extracting the sample we input our NA with the median/mode method using the function impute(), in order to not loose information.
+
+```{r}
+Logistic<-Efige %>%
+  dplyr::select(pavitt,age,country,mkt_innov,Global_exporter,fam_ceo,involv_n,grad_n)%>%
+  filter(pavitt=="Specialized industries")%>%
+ dplyr:: mutate(pavitt=as.factor(pavitt),
+         age=as.factor(age),
+         mkt_innov=as.factor(mkt_innov),
+         country=as.factor(country),
+         fam_ceo=as.factor(fam_ceo))
+
+
+data<-imputeMissings::compute(Logistic, method = "median/mode")
+Logistic<-imputeMissings::impute(Logistic, object = data)
+Logistic <- na.omit(Logistic)
+
+head(Logistic)
+```
+
+**Logistic Model**
+
+After standardizing our numerical variables we are ready to build our model:
+```{r}
+Logistic$involv_n=Standardize(Logistic$involv_n)
+Logistic$grad_n=Standardize(Logistic$grad_n)
+
+LR <- glm(Global_exporter ~ country + fam_ceo + mkt_innov + involv_n*grad_n, data=Logistic, family="binomial")
+summary(LR)
+par(mfrow=c(2,2))
+plot(LR)
+```
+**Parameters interpretations**
+ 
+Having AUT as reference and considering the comparison with **HUN** there is a statistically significant negative effect (-1.29254) on the global_exporter.
+
+Having AUT as reference and considering the comparison with **ITA** there is a statistically significant positive effect (0.85191) on the global_exporter.
+
+Having fam_ceo0 (the CEO is not from family) as reference and considering the comparison with **fam_ceo1** (the CEO is from family) there is a statistically significant negative effect (-0.23380 ) on the global_exporter.
+
+Having mkt_innov0 (no market innovation) as reference and considering the comparison with **mkt_innov1** (market innovation) there is a statistically significant positive effect (0.81650) on the global_exporter.
+
+involv_n: 5.09459 is the average change in the logit when involv_n change by 1 unit
+
+grad_n: 8.83055 is the average change in the logit when grad_n change by 1 unit
+
+**Moderation effect**
+
+involv_n:grad_ : -16.1%  is the average change in the logit involv_n:grad_n  change by 1 unit.
+
+It is interesting to see that if separated, the number of employers involved in R&D and the number of graduates employers have positive impact, while if we consider the number of graduates as a **moderator** of the number of the employers involved in R&D we have a significant negative effect.
+
+**ODDS interpretation**
+
+As an odd interpretation instead, we try to understand what has happened to the odd, changing it by 1 unit and taking in account the **proportional rate** at which the predicted odds ratio changes with each successive unit of x (how much the average odds ratio varies when an unit of independent variable)
+
+
+```{r}
+(exp(coef(LR))-1)*100
+```
+ 
+countryHUN = -72.5% decrease in the odds (for a one point increase in HUN score) of being in the firms that exported.
+
+countryITA = 134.4 % increase in the odds (for a one point increase in ITA score) of being in the firms that exported.
+
+fam_ceo1 = -20.8% decrease in the odds (for a one point increase in fam_ceo1 score) of being in the firms that exported.
+
+mkt_innov1 = 126.2% decrease in the odds (for a one point increase in mkt_innov1 score) of being in the firms that exported.
+
+involv_n: 16213% increase in the odds (for a one point increase in involv_n score) of being in the firms that exported.
+
+grad_n= 683908% increase in the odds (for a one point increase in grad_n score) of being in the firms that exported.
+
+involv_n:grad_n = -99.9% decrease in the odds (for a one point increase in involv_n score) of being in the firms that exported.
+ 
+**Pseudo R-squared**
+
+Analogue to an R-squared, this index is able to explain the variability of the model
+
+```{r}
+pR2(LR)
+```
+
+My McFadden R-squared is approximately 0.1. That indicates a quite good explanation of variability.
+ 
+**Assumptions**
+
+- Linearity assumption
+
+```{r message=FALSE, warning=FALSE}
+probabilities <- predict((LR), type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "pos", "neg")
+
+#Linearity assumption only for numerical predictors:
+numpred <- Logistic %>%
+  dplyr::select(involv_n,grad_n) 
+
+#Bind Logit and and tidying the data for plot
+data <- numpred %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "numpred", value = "predictor.value", -logit)
+
+data$logit=remove_outliers(data$logit)
+
+Linearity<-ggplot(data, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~numpred, scales = "free_y")
+Linearity
+```
+
+In both graphs, there seem to be an approximative linear relationship, even if we have still some outliers that pull our line to the top.
+
+
+- No influential values  
+
+```{r}
+plot(LR, which = 4, id.n = 2)
+```
+
+From the graph we can see that we have two huge influential points. Let's try to remove them and run another model.
+
+```{r}
+# Cooks distance & Leverage for every point
+influence <- cooks.distance(LR) 
+leverage <- hatvalues(LR)
+
+# Remove points that were very influential in our first model
+Logistic2 <- Logistic %>%
+    mutate(cooks_distance = influence, leverage = leverage) %>%
+    filter(cooks_distance < 0.01) %>%
+    filter(leverage < 0.05)
+```
+
+Without influential points 
+
+```{r}
+LR2 <- glm(Global_exporter ~country +mkt_innov +fam_ceo+involv_n*grad_n, data=Logistic2, family="binomial")
+summary(LR2)
+par(mfrow=c(2,2))
+plot(LR2)
+
+#Pseudo R-squared
+pR2(LR2)
+```
+
+Now our model is free from influential points and Even the McFadden coefficient increased
+
+- Multicollinearity
+
+```{r}
+car::vif(LR)
+car::vif(LR2)
+```
+
+In both cases we had not multicollinearity
+
+- Requires a large sample size
+
+```{r}
+dim(Logistic)
+```
+
+Our sample size has these dimensions, so the assumption is checked.
+
+# Supervised Classification
+
+In this case I set as labels the categorical variable that regards the **external_financing** of the firm. So my aim is predicting whether an unknown firm will be classified correctly in the group of firms that had external financing or not.
+
+Let's create a classification subset from our previous dataset:
+
+```{r}
+Classif<-Efige %>%
+  dplyr::select(external_financing,empl,no_family_n, family_n, skilled_n,
+         unskilled_n,involv_n,grad_n,foreign_empl_n,core_p,po,f9,f10,f11,
+         foreign_affiliate,white_n,exp_richness)%>%
+  mutate(external_financing=as.factor(external_financing))
+
+data1<-imputeMissings::compute(Classif, method = "median/mode")
+Classif<-imputeMissings::impute(Classif, object = data1)
+
+head(Classif)
+```
+
+ Let's see how much our classification rule **KNN** is able to predict well our labels using our features (that in this case are almost all variables).
+
+## **K-Nearest Neighbous (KNN)**
+
+```{r}
+set.seed(2009)
+random<- sample(rep(1:14759)) # Randomly generate numbers from 1 to 14759
+
+Classif<- Classif[random,] # Randomize Classif
+
+Classif2<- as.data.frame(lapply(Classif[,c(2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17)],normalize))
+
+head(Classif2)
+
+Efige.train<-Classif2[1:11807,]
+Efige.train.label<- Classif[1:11807,1]
+
+Efige.test<- Classif2[11807:14759 ,] #20% as test set
+Efige.test.label<- Classif[11807:14759 ,1]
+
+Classif2<-na.omit(Classif2)
+predict<-knn(train=Efige.train, test=Efige.test, cl=Efige.train.label ,k=2)
+
+Tab <- table(Efige.test.label, predict)
+Tab # Confusion matrix
+```
+
+
+**SPECIFICITY, SENSITIVITY AND AUC**
+
+```{r}
+psych::AUC(Tab, plot = "a")
+```
+
+In our case, both **Sensitivity** and **specificity** are very high.
+
+The **accuracy** is pretty high 0.91, so it means that our classifier is very accurate in predicting labels.
+
+The **miss-classficiation** error rate instead is simply 1-accuracy, so 0.09, meaning that we have few mistaken prediction of labels.
+
+The **AUC** instead, indicates that our classifier has a very good (0.97) discriminating ability in recognizing firms that had external financing and firms that didn't.
+
+
+Plot Accuracy and Miss-classification error rate against neighbors
+```{r}
+res=rep(NA,20)
+
+for(i in 1:20){mod=knn(train=Efige.train, test=Efige.test, cl=Efige.train.label, k=i)
+acc=sum(Efige.test.label==mod)
+res[i]=1-acc/length(mod)}
+
+par(mfrow=c(1,2))
+
+plot(1:20,res,type="l",col="red", xlab="Neighbours", ylab="Misclassification error rate")
+plot(1:20,1-res,type="l",col="blue", xlab="Neighbours", ylab="Accuracy")
+```
+
+As the plot shows, as we increase the number of neighbors, the miss-classification error rate increases,a and the accuracy viceversa. The optimal number of neighbors seems to be around 5, since after that point both the curve are stabilized.
+
+## **KNN with 10-fold cross-validation **
+
+This approach instead is based on resampling methods, and it's very useful to not lose information of our dataset to implement our classifier
+
+```{r}
+TrainData <- Classif[,2:17]
+TrainClasses <- Classif[,1]
+
+control <- trainControl(method="cv", number=10)
+
+CrossValid <- train(TrainData, TrainClasses,
+method = "knn",
+preProcess = c("center", "scale"),
+tuneLength = 12,
+trControl = control)
+
+plot(CrossValid)
+CrossValid$finalModel
+```
+
+```{r}
+CrossValid$results
+```
+
+
+
+As expected, the best number of neighbors is 5 or less than 5, because if we go on, our accuracy will fall dramatically.
+
+
+# Clustering
+
+## **Agglomerative Hierarchical Clustering**
+
+The feature selected for the unsupervised classification will be:
+
+- Number of employers;
+
+- Blue collar employers;
+
+- Number of banks;
+
+- Percentage of trained employers.
+
+My aim is to understand if according to the selected predictors we can discover different patterns of data in our dataframe.
+
+Selecting and pre-processing the data (normalizing predictors and removing outliers).
+```{r}
+
+Clustering<-Efige%>%
+  dplyr::select(empl,skilled_n,f9,training)%>%
+  filter(country=="HUN"|country=="AUT"|country=="FRA"|country=="GER") # I choose to not select all countries for a matter of visualization, not because i want to find separation among countries!
+
+data2<-imputeMissings::compute(Clustering, method = "median/mode")
+Clustering<-imputeMissings::impute(Clustering, object = data2)
+
+Clustering$training<-normalize(Clustering$training)
+Clustering$f9<-normalize(Clustering$f9)
+Clustering$empl<-normalize(Clustering$empl)
+Clustering$skilled_n<-normalize(Clustering$skilled_n)
+
+Clustering$training<-remove_outliers(Clustering$training)
+Clustering$empl<-remove_outliers(Clustering$empl)
+Clustering$skilled_n<-remove_outliers(Clustering$skilled_n)
+Clustering$f9<-remove_outliers(Clustering$f9)
+
+Clustering<-na.omit(Clustering)
+
+head(Clustering)
+```
+
+In this step we compute our distance matrix, plot our dendogram and using the Elbow and Sihlouette method to understand how many cluster we will obtain according to our features.
+
+```{r message=FALSE, warning=FALSE}
+dd=dist(Clustering, method="manhattan") # Distance matrix
+
+cluster = hclust(dd, method ="average")
+plot(cluster)
+rect.hclust(cluster, k=2, border = 2:3) #Separate groups of dendogram
+
+plot1 <- fviz_nbclust(Clustering, FUN = hcut, method = "wss",
+k.max = 10) +
+ggtitle("Elbow method")
+
+plot2 <- fviz_nbclust(Clustering, FUN = hcut, method = "silhouette",
+k.max = 10) +
+ggtitle("Silhouette method")
+
+Plot <- grid.arrange(plot1,plot2, ncol=2)
+cut<-cutree(cluster, 2)
+```
+
+
+Descriptive graph of the two clusters:
+
+
+```{r message=FALSE, warning=FALSE}
+ggpairs(cbind(Clustering, cut=as.factor(cut)),
+        columns=1:4, aes(colour=cut, alpha=0.5),
+        lower=list(continuous="points"),
+        upper=list(continuous="blank"),
+        axisLabels="none", switch="both")+
+        theme_bw()
+```
+
+
+
+From the dendogram we can see that we can identify two different clusters according to our features. 
+Since now we cannot plot in a four dimension space, we must use a dimensionality reduction plot: **PCA**. This way of representing data is especially useful because it allows us to see the maximum spread of observations (if plotted on the first and second principal components).
+
+
+We will try to plot our data on the factorial space along the first two components and see what we will obtain
+
+```{r}
+fviz_cluster(list(data=Clustering, cluster=cut))+
+  theme_minimal()
+```
+
+```{r}
+pc <- PCA(Clustering, ncp = 2 ,scale.unit = TRUE)
+```
+
+At first glance we can tell that both groups of firms have a large within sum of squares and a small between sum of squares, meaning that observations are not so close to each other with respect to the cluster. 
+
+The overlapping of the two cluster indicates a group of firms that in terms of employers, blue collars, number of banks and percentage of trained employers is very similar. 
+
+
+We can also plot a **circlized Dendogram** for better visualization of our clusters.
+
+```{r}
+Clusters = hclust(dd,method = "ave")
+dend <- as.dendrogram(Clusters)
+dend <- color_branches(dend, k=2)
+circlize_dendrogram(dend, labels = FALSE)
+```
+
+
+Unfortunately, the crisp clustering forces the observations to belong to a cluster or another, without considering that there could be a midway: Fuzzy clustering
+
+## **Fuzzy clustering**
+
+Fuzzy clustering is based is another interesting approach to unsupervised classification, in which we are taking in account the degree of membership, in such a way that the observation can belong to more than one group.
+
+Choice of groups based on three indexes that should be maximised:
+
+- **The Modified Partition Coefficient index** (MPC)
+
+- **The Partition Coefficient index** (PC)
+
+- **The Fuzzy Silhouette index** (FS)
+
+```{r message=FALSE, warning=FALSE}
+Clustering=Clustering[,-1]
+
+MPC=rep(NA,10)
+for (i in 2:length(MPC)) {clusf=FKM(Clustering,i)
+MPC[i]=MPC(clusf$U)}
+MPC=MPC[-1]
+
+PC=rep(NA,10)
+for (i in 2:length(PC)) {clusf=FKM(Clustering,i)
+PC[i]=PC(clusf$U)}
+PC=PC[-1]
+
+FS=rep(NA,10)
+for (i in 2:length(FS)) {clusf=FKM(Clustering,i)
+FS[i]=SIL.F(Clustering,clusf$U)}
+FS=FS[-1]
+
+Data=data.frame(cbind(MPC,PC,FS))
+head(Data)
+```
+
+
+Plot all three together to understand the optimal number of clusters:
+```{r}
+x=c(2:10)
+for (i in 1:ncol(Data)) {plot(x,Data[,i],type="l",lty=i,lwd=2,ylim=c(0,max(Data)+0.5),xlim=c(1,10),main="Number of Group Choice", xlab="Number of Groups",ylab="Index Value")
+par(new=TRUE)}
+
+legend("topright",c("MPC","PC","SIL.F"),lty=1:3,lwd=2)
+```
+
+max MPC = 8
+
+max SIL.F = 2
+
+max PC = 2
+
+So the optimal choice of clusters is 2
+
+```{r message=FALSE, warning=FALSE}
+fannyx=fanny(Clustering,2)
+fanni=fanny(Clustering, 2, diss = FALSE, memb.exp = 2, metric = "euclidean",
+stand = FALSE, maxit = 500)
+
+fviz_cluster(fanni,repel=TRUE)+
+  theme_minimal()+
+  scale_fill_brewer(palette = "Set1")
+```
+
+
+From the plot above we can see that firms in the intersection of the two clusters belong (with different degree of membership) to both clusters.
+
+Actually, plotting our observations in the two principal components we are explaining just the 70% of our variability.
+
+Let's now plot the degree of membership scatterplot to have a better visualization of our observation belonging to each cluster:
+
+```{r}
+pc <- PCA(Clustering, ncp = 2 ,scale.unit = TRUE, graph = FALSE)
+
+coo=pc$ind$coord
+dataf<-data.frame(coo[,1],coo[,2])
+x1=coo[,1]
+x2=coo[,2]
+colnames(dataf)<-c("x1","x2")
+Name=rownames(dataf)
+
+Fuzzyplot1<-ggplot(Clustering, aes(x=x1, y=x2, colour=fanni$membership[,1])) +
+geom_point(size=1)+
+scale_colour_gradient("",low="green",high="red") +
+theme_minimal()+
+ggtitle("Fuzzy Clustering - Cluster 1") 
+
+Fuzzyplot2<-ggplot(Clustering, aes(x=x1, y=x2, colour=fanni$membership[,2])) +
+geom_point(size=1)+
+scale_colour_gradient("",low="green",high="red") +
+theme_minimal()+
+ggtitle("Fuzzy Clustering - Cluster 2") 
+
+Fuzzyplot1
+Fuzzyplot2
+```
+
+The orange shaded observations are intended as firms that belong to both clusters
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
